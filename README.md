@@ -1,37 +1,39 @@
 # CUDA-CFG-10.1
 
-We use CUDA-10.1.
+We used CUDA-10.1.
 
-We use the following command to dump cfgs:
+We used the following command to dump CFGs:
 
     nvdisasm -cfg -poff <cubin_name>
 
-Stream\_COPY.cfg is the cfg of the unoptimized (-O0) Stream\_COPY kernel in RAJAPerf Suite.
+`Stream_COPY.cfg` is the CFG of the unoptimized (-O0 -G) *Stream\_COPY* kernel in RAJAPerf Suite.
 
-tensor\_contraction.cfg is the cfg of the optimized (-O3) tensor\_contraction kernel in ExaTensor.
+`tensor_contraction.cfg` is the CFG of the optimized (-O3 -lineinfo) *tensor\_contraction* kernel in ExaTensor.
 
 ### Problem 1
 
-There are some dangling blocks not connected with other blocks in cfgs.
+There are some dangling blocks not connected with other blocks.
 
-I am okay with the current representation because the problem is really with boost APIs. 
+We are okay with the current representation because the problem is really with boost APIs. 
 
-In tensor\_contraction.cfg, `.L22` is a dangling block. The block is supposed to be linked by `.L_11`. It makes sense to separate this block on the CFG because the instruction before it is an EXIT instruction, meaning that the block is never executed.
+In `tensor_contraction.cfg`, `.L22` is a dangling block. The block is supposed to be linked by `.L_11`. It makes sense to separate this block from other blocks because the instruction before it is an EXIT instruction, meaning that the block is never executed.
 
-It is not only the last block has the chance to become a dangling block. In Stream\_COPY.cfg, `.L_15` and `.L_14` are dangling blocks, while `.L_15` is the last block, `.L_14` is a internal block.
+It is not only the last block has the chance to become a dangling block. In `Stream_COPY.cfg`, `.L_15` and `.L_14` are dangling blocks. While `.L_15` is the last block, `.L_14` is an internal block.
 
-Our control flow analyzer uses boost graphviz APIs to parse a dot graph, which does not reflect subgraphs as actual entities. The reader API returns a set of nodes in the dot graph without identifiying which subgraph each node belongs to. Therefore, if there are several dangling blocks with the same instruction addresses, we couldn't associate them with the correponding subgraph. Currently, we just fill in NOP instructions for these dangling blocks.
+Our control flow analyzer uses boost graphviz API to parse a dot graph. The API returns a set of nodes in the dot graph without identifying which subgraph each node belongs to. Therefore, if there are several dangling blocks with the same instruction address, we cannot associate them with the corresponding subgraph, resulting in instruction "gaps." Currently, we just fill in NOP instructions for these gaps.
 
-If nvdisasm could link these dangling blocks, we can construct accurate control flow graphs, If not, it is still fine because in most cases instructions in these blocks are not important.
+If nvdisasm links these dangling blocks in the output CFGs, we can construct accurate control flow graphs. If not, it is still fine because instructions in these blocks are mostly not important.
 
 ### Problem 2
 
-Blocks in the CFGs are not "basic blocks".
-
-https://en.wikipedia.org/wiki/Basic_block
+Blocks in the CFGs are not "[basic blocks](https://en.wikipedia.org/wiki/Basic_block)."
 
     In compiler construction, a basic block is a straight-line code sequence with no branches in except to the entry and no branches out except at the exit.
 
-We notice that in tensor\_contraction.cfg, however, blocks are not diviced by branch instructions. Instead, they are grouped by some unknown rules. 
+In `tensor_contraction.cfg`, however, blocks are not divided by branch instructions.
 
-In comparison, in "Stream\_COPY.cfg", most blocks end with branch instructions. Therefore, I supppose it is the compiler that merges blocks together such that the final cfg in the optimized version.
+In comparison, in `Stream_COPY.cfg`, most blocks end with branch instructions.
+
+I suppose it is the NVCC compiler that merges basic blocks in the optimized version so that nvdisasm outputs "super" blocks in the CFGs.
+
+We need the real basic block representation since our control flow analyzer identifies loop nests in CFGs. The loop analysis algorithm requires each basic block is a sequential code.
